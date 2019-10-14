@@ -13,6 +13,9 @@ import java.io.*;
 
 import org.apache.commons.lang3.SerializationUtils;
 
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,7 +34,7 @@ public class DemoTests {
         ConnectionFactoryConfig connectionFactory = new ConnectionFactoryConfig();
         connectionFactory.setHost("localhost");
         connectionFactory.setPort(5672);
-        connectionFactory.setVirtualHost("test-host1");
+        connectionFactory.setVirtualHost("test2");
         connectionFactory.setUsername("guest");
         connectionFactory.setPassword("guest");
 
@@ -210,4 +213,100 @@ public class DemoTests {
         System.in.read();
     }
 
+    /**
+     * 测试BasicPublish的mandatory属性，未绑定队列
+     *  mandatory：
+     *      true:监听会被执行
+     *      false:监听不会被执行，消息直接被broker丢弃
+     */
+    @Test
+    public void testBasicPublishWithMandatoryUnBind() throws IOException {
+        String queue = "Test-Mandatory-Queue-UnBind";
+        String exchange = "Test-Mandatory-Exchange-UnBind";
+        String error_RoutingKey = "Error_RoutingKey";
+        String correct_RoutinKey = "Correct_RoutingKey";
+        String default_RoutingKey = "";
+
+        channel.basicQos(1);
+        // 监听
+        channel.addReturnListener(new ReturnListener() {
+            public void handleReturn(int replyCode, String replyText, String exchange, String routingKey, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body);
+                System.out.println("testBasicPublishWithMandatoryUnBind:Basic.return返回的结果是："+message);
+            }
+        });
+        // 声明消息队列
+        channel.queueDeclare(queue, false, false, true, null);
+        // 创建交换机
+        channel.exchangeDeclare(exchange,BuiltinExchangeType.DIRECT );
+        // 发布消息，并设mandatory为true,且该交换机未绑定队列,
+        channel.basicPublish(exchange,correct_RoutinKey , true, MessageProperties.TEXT_PLAIN, "测试mandatory".getBytes());
+    }
+
+
+    /**
+     * 测试BasicPublish的mandatory属性，已绑定队列,且routingKey正确
+     *  mandatory:
+     *      消息正常投递到queue
+     */
+    @Test
+    public void testBasicPublishWithMandatoryBind() throws IOException {
+        String queue = "Test-Mandatory-Queue-Bind";
+        String exchange = "Test-Mandatory-Exchange-Bind";
+        String error_RoutingKey = "Error_RoutingKey";
+        String correct_RoutinKey = "Correct_RoutingKey";
+        String default_RoutingKey = "";
+
+        channel.basicQos(1);
+        // 监听
+        channel.addReturnListener(new ReturnListener() {
+            public void handleReturn(int replyCode, String replyText, String exchange, String routingKey, AMQP.BasicProperties properties, byte[] body) throws IOException {
+//                String message = new String(body);
+                System.out.println(replyCode+"\n"+replyText);
+                System.out.println("testBasicPublishWithMandatoryBind:Basic.return返回的结果是："+routingKey);
+            }
+        });
+        // 声明消息队列
+        channel.queueDeclare(queue, false, false, true, null);
+        // 创建交换机
+        channel.exchangeDeclare(exchange,BuiltinExchangeType.DIRECT );
+        // 绑定队列
+        channel.queueBind(queue, exchange, correct_RoutinKey);
+        // 发布消息，并设mandatory为true,且该交换机绑定队列,
+        channel.basicPublish(exchange,correct_RoutinKey, true, MessageProperties.TEXT_PLAIN, "测试mandatory:set mandatory value as true and bind queue to exchange with routingKey".getBytes());
+    }
+
+    @Test
+    public void testQueueDeclareWithExclusive() throws IOException, TimeoutException, NoSuchAlgorithmException, KeyManagementException, URISyntaxException {
+        ConnectionFactory connectionFactory = new ConnectionFactory();
+        connectionFactory.setUri("amqp://guest:guest@localhost:5672/test2");
+        Connection connection_1 = connectionFactory.newConnection();
+        // 在连接1下创建一个channel : channel_1
+        Channel channel_1 = connection_1.createChannel();
+        // 使用channel_1创建一个独占队列
+        AMQP.Queue.DeclareOk queue1 = channel_1.queueDeclare("独占队列1", true, true, false, null);
+        System.out.println(queue1.getQueue());
+        channel_1.basicPublish("", "独占队列1", null,"独占队列1".getBytes());
+        // 关闭channel_1
+        channel_1.close();
+        System.out.println("--------------");
+        // 在连接1下，再创建一个channel:channel_2
+        Channel channel_2 = connection_1.createChannel();
+        // 使用channel_2获取同一连接下另一个channel创建的独占队列
+        AMQP.Queue.DeclareOk declareOk = channel_2.queueDeclarePassive(queue1.getQueue());
+        System.out.println(declareOk.getQueue()); // 会输出:独占队列1
+        // 关闭连接1
+//        connection_1.close();
+        System.out.println("--------------");
+        // 新建一个连接2
+        Connection connection_2 = connectionFactory.newConnection();
+        // 连接2创建一个channel去获取连接1下的独占队列
+        Channel channelOf2 = connection_2.createChannel();
+        /**
+         * 连接1关闭时：会报404 (reply-code=404, reply-text=NOT_FOUND - no queue '独占队列1' in vhost 'test2'.
+         * 连接1未关闭时：405 (reply-code=405, reply-text=RESOURCE_LOCKED - cannot obtain exclusive access to locked queue '独占队列1' in vhost 'test2'.
+         *      It could be originally declared on another connection or the exclusive property value does not match that of the original declaration., class-id=50, method-id=10)
+         */
+        AMQP.Queue.DeclareOk declareOk1 = channelOf2.queueDeclarePassive(queue1.getQueue());
+    }
 }
