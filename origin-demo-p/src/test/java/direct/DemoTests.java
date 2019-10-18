@@ -1,5 +1,8 @@
 package direct;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.rabbitmq.client.*;
 import com.wxss.mq.config.ConnectionFactoryConfig;
 import com.wxss.mq.config.ExchangeConstant;
@@ -16,9 +19,7 @@ import org.apache.commons.lang3.SerializationUtils;
 import java.net.URISyntaxException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -29,18 +30,18 @@ public class DemoTests {
 
     private static Channel channel;
 
-    @Before
-    public void before() throws IOException, TimeoutException {
-        ConnectionFactoryConfig connectionFactory = new ConnectionFactoryConfig();
-        connectionFactory.setHost("localhost");
-        connectionFactory.setPort(5672);
-        connectionFactory.setVirtualHost("test2");
-        connectionFactory.setUsername("guest");
-        connectionFactory.setPassword("guest");
-
-        Connection connection = RabbitmqConfig.getConnection(connectionFactory);
-        channel = RabbitmqConfig.getChannel(connection, null);
-    }
+//    @Before
+//    public void before() throws IOException, TimeoutException {
+//        ConnectionFactoryConfig connectionFactory = new ConnectionFactoryConfig();
+//        connectionFactory.setHost("localhost");
+//        connectionFactory.setPort(5672);
+//        connectionFactory.setVirtualHost("test2");
+//        connectionFactory.setUsername("guest");
+//        connectionFactory.setPassword("guest");
+//
+//        Connection connection = RabbitmqConfig.getConnection(connectionFactory);
+//        channel = RabbitmqConfig.getChannel(connection, null);
+//    }
 
     @After
     public void after() throws IOException, TimeoutException {
@@ -115,7 +116,6 @@ public class DemoTests {
             user.setBirthday(new Date());
             Map<String,User> userMap = new HashMap<String, User>();
             userMap.put("A", user);
-
             byte[] body = map2Byte(userMap);
             // 发送
             channel.basicPublish(ExchangeConstant.DIRECT_EX_DEMO_TWO, routingKey, null, body);
@@ -308,5 +308,33 @@ public class DemoTests {
          *      It could be originally declared on another connection or the exclusive property value does not match that of the original declaration., class-id=50, method-id=10)
          */
         AMQP.Queue.DeclareOk declareOk1 = channelOf2.queueDeclarePassive(queue1.getQueue());
+    }
+
+    @Test
+    public void testGson(){
+        GsonBuilder builder = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").setPrettyPrinting();
+        Gson gson = builder.create();
+        List<User> userList = new ArrayList<>();
+        User user = new User();
+        user.setUsername("测试1");
+        user.setPassword("123");
+        user.setBirthday(new Date());
+
+        userList.add(user);
+
+        user = new User();
+        user.setUsername("测试2");
+        user.setPassword("456");
+        user.setBirthday(new Date());
+
+        userList.add(user);
+
+        String json = gson.toJson(userList);
+        System.out.println(json);
+
+        List<User> list = gson.fromJson(json, TypeToken.getParameterized(List.class,User.class).getType());
+
+        System.out.println(list);
+
     }
 }
